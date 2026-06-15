@@ -74,8 +74,21 @@ following command uncompresses the files::
 
 .. highlight:: bash
 
-Compile stable software on Linux or FreeBSD
--------------------------------------------
+Compile stable software on Linux
+--------------------------------
+
+To build f3write and f3read::
+
+    make
+
+If you want to install f3write and f3read, run the following command::
+
+    make install
+
+To build f3probe, f3fix, and f3brew, see section "The extra applications for Linux".
+
+Compile stable software on FreeBSD
+----------------------------------
 
 To build::
 
