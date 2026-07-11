@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AETHER_UI_DIR="${AETHER_UI_DIR:-/home/paul/scm/aether-ui}"
+AETHER_UI_DIR="${AETHER_UI_DIR:-$HOME/scm/AetherThings/aether-ui}"
 AE="${AE:-ae}"
 AETHERC="${AETHERC:-aetherc}"
 SOURCE="${1:-app/fight_flash_fraud.ae}"

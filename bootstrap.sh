@@ -10,15 +10,15 @@
 # builds this app and runs the pure + UI tests.
 #
 # Env overrides:
-#   SCM_DIR        parent checkout dir              (default: ~/scm)
+#   SCM_DIR        parent checkout dir              (default: ~/scm/AetherThings)
 #   AETHER_REF     branch/tag/SHA for clone/update   (default: main)
 #   AETHER_UI_REF  branch/tag/SHA for clone/update   (default: main)
 #   AEOCHA_REF     branch/tag/SHA for clone/update   (default: main)
-#   AE             explicit ae binary               (default: ~/scm/aether/build/ae)
+#   AE             explicit ae binary               (default: ~/scm/AetherThings/aether/build/ae)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCM_DIR="${SCM_DIR:-$HOME/scm}"
+SCM_DIR="${SCM_DIR:-$HOME/scm/AetherThings}"
 AETHER_DIR="$SCM_DIR/aether"
 AETHER_UI_DIR="$SCM_DIR/aether-ui"
 AEOCHA_DIR="$SCM_DIR/aeocha"

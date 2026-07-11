@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AEOCHA_DIR="${AEOCHA_DIR:-$HOME/scm/aeocha}"
-AETHER_UI_DIR="${AETHER_UI_DIR:-$HOME/scm/aether-ui}"
+AEOCHA_DIR="${AEOCHA_DIR:-$HOME/scm/AetherThings/aeocha}"
+AETHER_UI_DIR="${AETHER_UI_DIR:-$HOME/scm/AetherThings/aether-ui}"
 AE="${AE:-ae}"
 PORT="${AETHER_UI_TEST_PORT:-9222}"
 LOG="${TMPDIR:-/tmp}/fight_flash_fraud-ui-test.log"

@@ -1,5 +1,5 @@
 AE ?= ae
-AEOCHA_DIR ?= /home/paul/scm/aeocha
+AEOCHA_DIR ?= $(HOME)/scm/AetherThings/aeocha
 
 BUILD_DIR = build
 SRC_DIR = src
