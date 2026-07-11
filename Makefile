@@ -21,9 +21,6 @@ test-unit: | $(BUILD_DIR)
 test-ui: app
 	scripts/test-ui.sh
 
-docker:
-	docker build -f Dockerfile -t f3:latest .
-
 install: all
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
