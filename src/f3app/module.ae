@@ -1,0 +1,33 @@
+exports (
+    path_description, tested_capacity_text, verification_result_text
+)
+
+import f3core
+
+path_description(path: string) -> string {
+    if path == "/tmp/f3-aether-ui" {
+        return "Simulation of 1MB flash"
+    }
+    return "Claimed 32GB flash"
+}
+
+tested_capacity_text(count: long, file_size_mb: long) -> string {
+    total_mb = count * file_size_mb
+    if total_mb >= 1024 {
+        gb = total_mb / 1024
+        rem = total_mb - (gb * 1024)
+        if rem == f3core.zero_long() {
+            return "${gb}GB"
+        }
+        return "${total_mb}MB"
+    }
+    return "${total_mb}MB"
+}
+
+verification_result_text(count: long, file_size_mb: long, failures: long) -> string {
+    if failures == f3core.zero_long() {
+        tested = tested_capacity_text(count, file_size_mb)
+        return "Flash size is correct for tested ${tested}. No fraud detected."
+    }
+    return "Verification failed: ${failures} file(s) did not match. Possible flash fraud."
+}

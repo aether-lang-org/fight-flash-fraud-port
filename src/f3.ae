@@ -1,0 +1,120 @@
+import std.os
+import std.string
+import f3core
+
+usage() {
+    println("Usage:")
+    println("  f3 write [--start-at=N] [--end-at=N] [--size-mb=N] <PATH>")
+    println("  f3 read  [--start-at=N] [--end-at=N] [--size-mb=N] <PATH>")
+}
+
+parse_common(arg: string, start: long, end: long, file_size_mb: long) -> (long, long, long, int) {
+    if string.starts_with(arg, "--start-at=") == 1 {
+        return f3core.parse_size_bytes(string.substring(arg, 11, string.length(arg))), end, file_size_mb, 1
+    }
+    if string.starts_with(arg, "--end-at=") == 1 {
+        return start, f3core.parse_size_bytes(string.substring(arg, 9, string.length(arg))), file_size_mb, 1
+    }
+    if string.starts_with(arg, "--size-mb=") == 1 {
+        return start, end, f3core.parse_size_bytes(string.substring(arg, 10, string.length(arg))), 1
+    }
+    return start, end, file_size_mb, 0
+}
+
+write_files(path: string, start: long, end: long, file_size_mb: long) {
+    file_size = file_size_mb * 1048576
+    if path == "" || start <= f3core.zero_long() || end < start || file_size <= f3core.zero_long() {
+        usage()
+        exit(1)
+    }
+
+    f3core.print_header("write")
+    n = start
+    while n <= end {
+        println("Creating file ${n}.h2w ...")
+        err = f3core.write_h2w_file(path, n, file_size)
+        if err != "" {
+            println("Write failure: ${err}")
+            exit(1)
+        }
+        println("OK")
+        n = n + f3core.one_long()
+    }
+}
+
+read_files(path: string, start: long, end: long) {
+    if path == "" || start <= f3core.zero_long() {
+        usage()
+        exit(1)
+    }
+    if end == f3core.zero_long() { end = f3core.scan_last_h2w(path) }
+    if end < start {
+        println("No .h2w files in selected range")
+        return
+    }
+
+    f3core.print_header("read")
+    println("                  SECTORS      ok/corrupted")
+    total_ok = f3core.zero_long()
+    total_bad = f3core.zero_long()
+    n = start
+    while n <= end {
+        ok, bad, err = f3core.read_h2w_file(path, n)
+        if err != "" {
+            println("Validating file ${n}.h2w ... ${ok}/${bad} - ${err}")
+            exit(1)
+        }
+        println("Validating file ${n}.h2w ... ${ok}/${bad}")
+        total_ok = total_ok + ok
+        total_bad = total_bad + bad
+        n = n + f3core.one_long()
+    }
+    println("")
+    println("  Data OK: ${total_ok * f3core.SECTOR_SIZE} bytes (${total_ok} sectors)")
+    println("Data LOST: ${total_bad * f3core.SECTOR_SIZE} bytes (${total_bad} sectors)")
+    if total_bad > f3core.zero_long() { exit(1) }
+}
+
+main() {
+    if os.args_count() < 2 {
+        usage()
+        exit(1)
+    }
+
+    mode = os.args_get(1)
+    if mode == "--help" || mode == "help" {
+        usage()
+        return
+    }
+    if mode != "write" && mode != "read" {
+        usage()
+        exit(1)
+    }
+
+    start = f3core.parse_size_bytes("1")
+    end = f3core.parse_size_bytes("0")
+    file_size_mb = f3core.parse_size_bytes("1024")
+    path = ""
+
+    i = 2
+    while i < os.args_count() {
+        arg = os.args_get(i)
+        if arg == "--help" {
+            usage()
+            return
+        }
+        handled = 0
+        start, end, file_size_mb, handled = parse_common(arg, start, end, file_size_mb)
+        if handled == 0 {
+            path = arg
+        }
+        i = i + 1
+    }
+
+    if mode == "write" {
+        if end == f3core.zero_long() { end = start }
+        write_files(path, start, end, file_size_mb)
+    } else {
+        read_files(path, start, end)
+    }
+}

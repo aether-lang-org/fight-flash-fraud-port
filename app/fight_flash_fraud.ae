@@ -1,0 +1,468 @@
+import aether_ui
+import f3app
+import f3core
+import std.collections
+import std.fs
+import std.io
+import std.os (os_getenv)
+import std.string
+import std.intarr
+
+const GRID_COLS = 20
+const GRID_CELLS = 400
+
+extern aether_ui_textarea_set_text(handle: int, text: string)
+extern aether_ui_text_set_string(handle: int, text: string)
+extern aether_ui_text_create(label: string) -> int
+
+set_output(handle: int, text: string) {
+    aether_ui_textarea_set_text(handle, text)
+}
+
+set_text_label(handle: int, text: string) {
+    aether_ui_text_set_string(handle, text)
+}
+
+set_text_label_ref(handle_ref: ptr, text: string) {
+    h = intarr.intarr_get_raw(handle_ref, 0)
+    if h != 0 { set_text_label(h, text) }
+}
+
+append_log(log: string, line: string) -> string {
+    return string.concat(log, string.concat(line, "\n"))
+}
+
+cell_set(cells: ptr, index: int, label: string) {
+    if index < 0 || index >= GRID_CELLS { return }
+    h = intarr.intarr_get_raw(cells, index)
+    if h != 0 {
+        set_text_label(h, label)
+    }
+}
+
+set_button_enabled(handle_ref: ptr, enabled: int) {
+    h = intarr.intarr_get_raw(handle_ref, 0)
+    if h != 0 { aether_ui.style_enabled(h, enabled) }
+}
+
+reset_cells(cells: ptr) {
+    i = 0
+    while i < GRID_CELLS {
+        cell_set(cells, i, " ")
+        i = i + 1
+    }
+}
+
+range_count(start: long, end: long) -> long {
+    if end < start { return f3core.zero_long() }
+    return end - start + f3core.one_long()
+}
+
+progress_cells(done: long, total: long) -> int {
+    if total <= f3core.zero_long() { return 0 }
+    filled = done * GRID_CELLS / total
+    if done > f3core.zero_long() && filled < f3core.one_long() {
+        filled = f3core.one_long()
+    }
+    if filled > GRID_CELLS { return GRID_CELLS }
+    return filled
+}
+
+paint_progress(cells: ptr, from_cell: int, done: long, total: long, label: string) -> int {
+    to_cell = progress_cells(done, total)
+    i = from_cell
+    while i < to_cell {
+        cell_set(cells, i, label)
+        i = i + 1
+    }
+    return to_cell
+}
+
+add_path(paths: ptr, path: string) {
+    collections.string_list_add(paths, path)
+}
+
+is_digit(ch: int) -> int {
+    if ch >= 48 && ch <= 57 { return 1 }
+    return 0
+}
+
+trim_trailing_digits(name: string) -> string {
+    n = string.length(name)
+    while n > 0 && is_digit(string.char_at(name, n - 1)) == 1 {
+        n = n - 1
+    }
+    return string.substring(name, 0, n)
+}
+
+parent_block_name(name: string) -> string {
+    if string.starts_with(name, "mmcblk") == 1 || string.starts_with(name, "nvme") == 1 {
+        n = string.length(name)
+        while n > 0 && is_digit(string.char_at(name, n - 1)) == 1 {
+            n = n - 1
+        }
+        if n > 0 && string.char_at(name, n - 1) == 112 {
+            return string.substring(name, 0, n - 1)
+        }
+        return name
+    }
+    return trim_trailing_digits(name)
+}
+
+read_trimmed(path: string) -> string {
+    data, err = io.read_file(path)
+    if err != "" { return "" }
+    return string.trim(data)
+}
+
+block_removable(name: string) -> int {
+    if name == "" { return 0 }
+    value = read_trimmed("/sys/class/block/${name}/removable")
+    if value == "1" { return 1 }
+    parent = parent_block_name(name)
+    if parent != "" && parent != name {
+        value = read_trimmed("/sys/class/block/${parent}/removable")
+        if value == "1" { return 1 }
+    }
+    return 0
+}
+
+block_is_usb(name: string) -> int {
+    if name == "" { return 0 }
+    resolved, kind, _ = fs.realpath("/sys/class/block/${name}")
+    if kind == fs.KIND_OK && string.contains(resolved, "/usb") == 1 { return 1 }
+    parent = parent_block_name(name)
+    if parent != "" && parent != name {
+        resolved2, kind2, _ = fs.realpath("/sys/class/block/${parent}")
+        if kind2 == fs.KIND_OK && string.contains(resolved2, "/usb") == 1 { return 1 }
+    }
+    return 0
+}
+
+dev_block_name(source: string) -> string {
+    if string.starts_with(source, "/dev/") != 1 { return "" }
+    name = fs.path_basename(source)
+    if name == "" || string.starts_with(name, "loop") == 1 || string.starts_with(name, "zram") == 1 {
+        return ""
+    }
+    if string.starts_with(name, "dm-") == 1 || string.starts_with(source, "/dev/mapper/") == 1 {
+        return ""
+    }
+    return name
+}
+
+mountpoint_allowed(path: string) -> int {
+    if string.starts_with(path, "/media/") == 1 { return 1 }
+    if string.starts_with(path, "/run/media/") == 1 { return 1 }
+    if string.starts_with(path, "/mnt/") == 1 { return 1 }
+    if string.starts_with(path, "/Volumes/") == 1 { return 1 }
+    return 0
+}
+
+mounted_flash_like(source: string, mountpoint: string) -> int {
+    if mountpoint_allowed(mountpoint) == 0 { return 0 }
+    if fs.dir_exists(mountpoint) == 0 { return 0 }
+    block = dev_block_name(source)
+    if block == "" { return 0 }
+    if block_removable(block) == 1 { return 1 }
+    if block_is_usb(block) == 1 { return 1 }
+    return 0
+}
+
+add_mountinfo_paths(paths: ptr) {
+    info, err = io.read_file("/proc/self/mountinfo")
+    if err != "" { return }
+    lines = string.split(info, "\n")
+    defer string.array_free(lines)
+
+    n = string.array_size(lines)
+    i = 0
+    while i < n {
+        line = string.array_get(lines, i)
+        sep = string.index_of(line, " - ")
+        if sep >= 0 {
+            left = string.substring(line, 0, sep)
+            right = string.substring(line, sep + 3, string.length(line))
+            left_parts = string.split(left, " ")
+            right_parts = string.split(right, " ")
+            left_count = string.array_size(left_parts)
+            right_count = string.array_size(right_parts)
+            if left_count >= 5 && right_count >= 2 {
+                mountpoint = string.array_get(left_parts, 4)
+                source = string.array_get(right_parts, 1)
+                if mounted_flash_like(source, mountpoint) == 1 {
+                    add_path(paths, string.concat(mountpoint, ""))
+                }
+            }
+            string.array_free(left_parts)
+            string.array_free(right_parts)
+        }
+        i = i + 1
+    }
+}
+
+populate_mount_paths(paths: ptr) {
+    add_mountinfo_paths(paths)
+}
+
+pick_mount(paths: ptr, index: int) -> string {
+    count = collections.string_list_size(paths)
+    if count <= 0 { return "" }
+    if index < 0 { index = count - 1 }
+    if index >= count { index = 0 }
+    return collections.string_list_get(paths, index)
+}
+
+write_range(path: string, start: long, end: long, file_size: long,
+            cells: ptr, status_handle: int, bottom_status_ref: ptr,
+            log_handle: int, log_text: string) -> (string, int) {
+    fs.mkdir_p(path)
+    count = range_count(start, end)
+    reset_cells(cells)
+    set_text_label(status_handle, "Writing ${count} file(s) to ${path}")
+    set_text_label_ref(bottom_status_ref, "Writing test pattern")
+    log_text = append_log(log_text, "write: ${path}, files ${start}..${end}, ${file_size} bytes each")
+
+    n = start
+    done = f3core.zero_long()
+    painted = 0
+    while n <= end {
+        set_text_label(status_handle, "Writing ${n}.h2w")
+        err = f3core.write_h2w_file(path, n, file_size)
+        if err != "" {
+            painted = paint_progress(cells, painted, done + f3core.one_long(), count, "!")
+            log_text = append_log(log_text, "write ${n}.h2w: ${err}")
+            set_output(log_handle, log_text)
+            set_text_label(status_handle, "Write failed at ${n}.h2w")
+            set_text_label_ref(bottom_status_ref, "Write failed at ${n}.h2w")
+            return log_text, 0
+        }
+        done = done + f3core.one_long()
+        painted = paint_progress(cells, painted, done, count, "?")
+        log_text = append_log(log_text, "write ${n}.h2w: ok")
+        set_output(log_handle, log_text)
+        n = n + f3core.one_long()
+    }
+    set_text_label(status_handle, "Write complete")
+    set_text_label_ref(bottom_status_ref, "Write complete. Ready to read and verify.")
+    return log_text, 1
+}
+
+read_range(path: string, start: long, end: long, file_size_mb: long, cells: ptr,
+           status_handle: int, bottom_status_ref: ptr,
+           log_handle: int, log_text: string) -> string {
+    count = range_count(start, end)
+    set_text_label(status_handle, "Reading ${count} file(s) from ${path}")
+    set_text_label_ref(bottom_status_ref, "Reading and verifying")
+    log_text = append_log(log_text, "read: ${path}, files ${start}..${end}")
+
+    n = start
+    done = f3core.zero_long()
+    painted = 0
+    failures = f3core.zero_long()
+    while n <= end {
+        set_text_label(status_handle, "Verifying ${n}.h2w")
+        ok, bad, err = f3core.read_h2w_file(path, n)
+        done = done + f3core.one_long()
+        if err != "" {
+            failures = failures + f3core.one_long()
+            painted = paint_progress(cells, painted, done, count, "✕")
+            log_text = append_log(log_text, "read ${n}.h2w: ${err}")
+        } else if bad > f3core.zero_long() {
+            failures = failures + f3core.one_long()
+            painted = paint_progress(cells, painted, done, count, "✕")
+            log_text = append_log(log_text, "read ${n}.h2w: ${ok} ok, ${bad} bad")
+        } else {
+            painted = paint_progress(cells, painted, done, count, "✓")
+            log_text = append_log(log_text, "read ${n}.h2w: ${ok} sectors ok")
+        }
+        set_output(log_handle, log_text)
+        n = n + f3core.one_long()
+    }
+    set_text_label(status_handle, "Read complete")
+    set_text_label_ref(bottom_status_ref, f3app.verification_result_text(count, file_size_mb, failures))
+    return log_text
+}
+
+main() {
+    path_state = aether_ui.ui_state(0)
+    start_state = aether_ui.ui_state(1)
+    end_state = aether_ui.ui_state(1)
+    size_state = aether_ui.ui_state(1)
+
+    path_text = "/tmp/f3-aether-ui"
+    start_text = "1"
+    end_text = "1"
+    size_text = "1"
+    output_handle = 0
+    path_field = 0
+    path_description_handle = 0
+    read_button = 0
+    read_button_ref = intarr.intarr_new_filled_raw(1, 0)
+    bottom_status_ref = intarr.intarr_new_filled_raw(1, 0)
+    status_handle = 0
+    log_text = ""
+    log_hidden = 1
+    write_ready = 0
+    cells, _ = intarr.new_filled(GRID_CELLS, 0)
+    mount_paths = collections.string_list_new()
+    populate_mount_paths(mount_paths)
+    mount_index = 0
+
+    aether_ui.window("Fight Flash Fraud", 760, 560) {
+        root = aether_ui.vstack(10) {
+            aether_ui.text("Fight Flash Fraud")
+            aether_ui.divider()
+
+            aether_ui.hstack(8) {
+                aether_ui.text("Path")
+                path_field = aether_ui.textfield("Mounted drive or test directory") callback |val: string| {
+                    path_text = val
+                    set_text_label(path_description_handle, f3app.path_description(path_text))
+                    write_ready = 0
+                    set_button_enabled(read_button_ref, 0)
+                    aether_ui.ui_set(path_state, 1)
+                }
+                aether_ui.set_text(path_field, path_text)
+                aether_ui.btn("Prev") callback {
+                    mount_index = mount_index - 1
+                    picked = pick_mount(mount_paths, mount_index)
+                    if picked != "" {
+                        if mount_index < 0 {
+                            mount_index = collections.string_list_size(mount_paths) - 1
+                        }
+                        path_text = picked
+                        aether_ui.set_text(path_field, picked)
+                        set_text_label(path_description_handle, f3app.path_description(path_text))
+                        write_ready = 0
+                        set_button_enabled(read_button_ref, 0)
+                        aether_ui.ui_set(path_state, 1)
+                    }
+                }
+                aether_ui.btn("Next") callback {
+                    mount_index = mount_index + 1
+                    picked = pick_mount(mount_paths, mount_index)
+                    if picked != "" {
+                        if mount_index >= collections.string_list_size(mount_paths) {
+                            mount_index = 0
+                        }
+                        path_text = picked
+                        aether_ui.set_text(path_field, picked)
+                        set_text_label(path_description_handle, f3app.path_description(path_text))
+                        write_ready = 0
+                        set_button_enabled(read_button_ref, 0)
+                        aether_ui.ui_set(path_state, 1)
+                    }
+                }
+            }
+
+            path_description_handle = aether_ui.text(f3app.path_description(path_text))
+
+            aether_ui.hstack(8) {
+                aether_ui.text("Start")
+                start_field = aether_ui.textfield("1") callback |val: string| {
+                    start_text = val
+                    write_ready = 0
+                    set_button_enabled(read_button_ref, 0)
+                    aether_ui.ui_set(start_state, 1)
+                }
+                aether_ui.set_text(start_field, start_text)
+
+                aether_ui.text("End")
+                end_field = aether_ui.textfield("1") callback |val: string| {
+                    end_text = val
+                    write_ready = 0
+                    set_button_enabled(read_button_ref, 0)
+                    aether_ui.ui_set(end_state, 1)
+                }
+                aether_ui.set_text(end_field, end_text)
+
+                aether_ui.text("Size MB")
+                size_field = aether_ui.textfield("1") callback |val: string| {
+                    size_text = val
+                    write_ready = 0
+                    set_button_enabled(read_button_ref, 0)
+                    aether_ui.ui_set(size_state, 1)
+                }
+                aether_ui.set_text(size_field, size_text)
+            }
+
+            aether_ui.divider()
+            status_handle = aether_ui.text("Idle")
+
+            status_grid = aether_ui.grid(GRID_COLS, 1, 1)
+            ci = 0
+            while ci < GRID_CELLS {
+                cell = aether_ui_text_create("")
+                aether_ui.style_font_size(cell, 12.0)
+                aether_ui.width(cell, 18)
+                intarr.intarr_set_raw(cells, ci, cell)
+                aether_ui.grid_place(status_grid, cell, ci / GRID_COLS, ci % GRID_COLS, 1, 1)
+                ci = ci + 1
+            }
+
+            output_handle = aether_ui.textarea("Command output") callback |val: string| {}
+            set_output(output_handle, "")
+            aether_ui.set_hidden(output_handle, 1)
+
+            aether_ui.hstack(8) {
+                aether_ui.btn("Write test pattern") callback {
+                    start = f3core.parse_size_bytes(start_text)
+                    end = f3core.parse_size_bytes(end_text)
+                    mb = f3core.parse_size_bytes(size_text)
+                    if start <= f3core.zero_long() || end < start || mb <= f3core.zero_long() {
+                        set_text_label(status_handle, "Invalid range or size")
+                        set_text_label_ref(bottom_status_ref, "Invalid range or size")
+                        write_ready = 0
+                        set_button_enabled(read_button_ref, 0)
+                    } else {
+                        log_text, write_ready = write_range(path_text, start, end, mb * 1048576,
+                                                            cells, status_handle, bottom_status_ref,
+                                                            output_handle, log_text)
+                        set_button_enabled(read_button_ref, write_ready)
+                    }
+                }
+                read_button = aether_ui.btn("Read and verify") callback {
+                    if write_ready == 0 {
+                        set_text_label(status_handle, "Write test pattern first")
+                        set_text_label_ref(bottom_status_ref, "Write test pattern first")
+                    } else {
+                        start = f3core.parse_size_bytes(start_text)
+                        end = f3core.parse_size_bytes(end_text)
+                        mb = f3core.parse_size_bytes(size_text)
+                        if start <= f3core.zero_long() || end < start {
+                            set_text_label(status_handle, "Invalid range")
+                            set_text_label_ref(bottom_status_ref, "Invalid range")
+                        } else if mb <= f3core.zero_long() {
+                            set_text_label(status_handle, "Invalid size")
+                            set_text_label_ref(bottom_status_ref, "Invalid size")
+                        } else {
+                            log_text = read_range(path_text, start, end, mb, cells,
+                                                  status_handle, bottom_status_ref,
+                                                  output_handle, log_text)
+                        }
+                    }
+                }
+                intarr.intarr_set_raw(read_button_ref, 0, read_button)
+                aether_ui.style_enabled(read_button, 0)
+                aether_ui.btn("Show log") callback {
+                    if log_hidden == 1 {
+                        log_hidden = 0
+                        aether_ui.set_hidden(output_handle, 0)
+                    } else {
+                        log_hidden = 1
+                        aether_ui.set_hidden(output_handle, 1)
+                    }
+                }
+            }
+            bottom_status_handle = aether_ui.text("Ready")
+            intarr.intarr_set_raw(bottom_status_ref, 0, bottom_status_handle)
+
+            aether_ui.spacer()
+        }
+        aether_ui.margin_of(root, 12, 12, 12, 12)
+        if os_getenv("AETHER_UI_TEST_PORT") != null {
+            aether_ui.enable_test_server_root(9222, root)
+        }
+    }
+}

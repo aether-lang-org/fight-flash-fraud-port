@@ -24,21 +24,21 @@ We'll use :code:`/dev/sdX` as a placeholder here, you need to replace
 want to use.
 :code:`lsblk` will show you an overview of your current devices.
 
-Testing performance with f3read/f3write
----------------------------------------
+Testing performance with f3
+---------------------------
 
-Use these two programs in this order. f3write will write large files to
-your mounted disk and f3read will check if the flash disk contains
+Use these two subcommands in this order. ``f3 write`` writes large files
+to your mounted disk and ``f3 read`` checks if the flash disk contains
 exactly the written files::
 
-    $ build/f3write /media/michel/5EBD-5C80/
-    $ build/f3read /media/michel/5EBD-5C80/
+    $ build/f3 write /media/michel/5EBD-5C80/
+    $ build/f3 read /media/michel/5EBD-5C80/
 
 Please replace "/media/michel/5EBD-5C80/" with the appropriate path. USB
 devices are mounted in "/Volumes" on Macs.
 
-If you have installed f3read and f3write, you can remove the "./" that
-is shown before their names.
+If you have installed f3, you can run ``f3`` directly instead of
+``build/f3``.
 
 Quick capacity tests with f3probe
 ---------------------------------
@@ -77,11 +77,11 @@ following command uncompresses the files::
 Compile stable software on Linux
 --------------------------------
 
-To build f3write and f3read::
+To build the Aether CLI::
 
     make
 
-If you want to install f3write and f3read, run the following command::
+If you want to install f3, run the following command::
 
     make install
 
@@ -98,17 +98,17 @@ To build::
 
     gmake
 
-If you want to install f3write and f3read, run the following command::
+If you want to install f3, run the following command::
 
     make install
 
 Compile stable software on Windows/Cygwin
 -----------------------------------------
 
-f3write and f3read can be installed on Windows, but currently f3probe, f3fix,
+f3 can be installed on Windows, but currently f3probe, f3fix,
 and f3brew `require Linux <#the-extra-applications-for-linux>`__.  To use them
-on a Windows machine, use the `Docker Installation <#docker>`__.  For f3write
-and f3read, read on.
+on a Windows machine, use the `Docker Installation <#docker>`__.  For f3, read
+on.
 
 If you haven't already, install the following Cygwin packages and their dependencies:
 
@@ -121,16 +121,16 @@ To build, you need special flags::
     export LDFLAGS="$LDFLAGS -Wl,--stack,4000000 -largp"
     make
 
-If you want to install f3write and f3read, run the following command::
+If you want to install f3, run the following command::
 
     make install
 
 Compile stable software on Apple Mac
 ------------------------------------
 
-f3write and f3read can be installed on Mac, but currently f3probe, f3fix, and
+f3 can be installed on Mac, but currently f3probe, f3fix, and
 f3brew `require Linux <#the-extra-applications-for-linux>`__.  To use them on
-Mac, use the `Docker Installation <#docker>`__.  For f3write and f3read, read
+Mac, use the `Docker Installation <#docker>`__.  For f3, read
 on.
 
 Using HomeBrew
@@ -231,8 +231,8 @@ To run f3 commands using your newly built Docker image::
     docker run -it --rm --device <device> f3:latest <f3-command> [<f3-options>] <device>
 
     docker run -it --rm --device /dev/sdX f3:latest f3probe --destructive --time-ops /dev/sdX
-    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3write /mnt/
-    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3read /mnt/
+    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3 write /mnt/
+    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3 read /mnt/
 
 Drive Permissions / Passthrough
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -398,13 +398,13 @@ personalize F3 to your specific needs:
 
   Use example: ``scripts/f3write.h2w /media/michel/5EBD-5C80/``.
 
-- ``scripts/log-f3wr`` - Script that runs f3write and f3read, and records
+- ``scripts/log-f3wr`` - Script that runs ``f3 write`` and ``f3 read``, and records
   their output into a log file.
 
   Use example: ``scripts/log-f3wr log-filename /media/michel/5EBD-5C80/``.
 
-Please notice that all scripts and use examples above assume that
-f3write, f3read, and the scripts are in the same folder.
+Please notice that all scripts and use examples above assume this repo's
+``build/f3`` has been built.
 
 Flakyflash
 ----------

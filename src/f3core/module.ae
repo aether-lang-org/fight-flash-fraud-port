@@ -1,0 +1,199 @@
+import std.bytes
+import std.bits
+import std.fs
+import std.string
+
+exports (
+    SECTOR_SIZE,
+    parse_size_bytes, h2w_path, write_h2w_file, read_h2w_file,
+    scan_last_h2w, print_header, zero_long, one_long
+)
+
+const SECTOR_SIZE = 512
+
+print_header(name: string) {
+    println("F3 ${name} 10.0-aether")
+    println("Copyright (C) 2010 Digirati Internet LTDA.")
+    println("This is free software; see the source for copying conditions.")
+    println("")
+}
+
+zero_long() -> long {
+    long z = 0
+    return z
+}
+
+one_long() -> long {
+    long o = 1
+    return o
+}
+
+is_digit(c: int) -> int {
+    if c >= 48 && c <= 57 { return 1 }
+    return 0
+}
+
+parse_size_bytes(arg: string) -> long {
+    n = string.length(arg)
+    if n <= 0 { return -1 }
+
+    i = 0
+    value = zero_long()
+    while i < n {
+        c = string.char_at_n(arg, n, i)
+        if is_digit(c) == 0 { break }
+        value = value * 10 + (c - 48)
+        i = i + 1
+    }
+    if i == 0 { return -1 }
+    if i == n { return value }
+    if i + 1 != n { return -1 }
+
+    suffix = string.char_at_n(arg, n, i)
+    match (suffix) {
+        115 -> { return value * 512 }                 // s
+        83  -> { return value * 512 }                 // S
+        107 -> { return value * 1024 }                // k
+        75  -> { return value * 1024 }                // K
+        109 -> { return value * 1048576 }             // m
+        77  -> { return value * 1048576 }             // M
+        103 -> { return value * 1073741824 }          // g
+        71  -> { return value * 1073741824 }          // G
+        _ -> { return -1 }
+    }
+}
+
+h2w_path(dir: string, number: long) -> string {
+    clean = fs.clean(dir)
+    name = string.from_long(number)
+    return fs.join_clean(clean, string.concat(name, ".h2w"))
+}
+
+next_random_number(random_number: long) -> long {
+    long multiplier = 4294967311
+    long increment = 17
+    return bits.wrapping_add64(bits.wrapping_mul64(random_number, multiplier), increment)
+}
+
+sector_payload(offset: long) -> string {
+    buf = bytes.new(SECTOR_SIZE)
+    bytes.set_le64(buf, 0, offset)
+    rnd = offset
+    i = 8
+    while i < SECTOR_SIZE {
+        rnd = next_random_number(rnd)
+        bytes.set_le64(buf, i, rnd)
+        i = i + 8
+    }
+    return bytes.finish(buf, SECTOR_SIZE)
+}
+
+write_h2w_file(dir: string, number: long, file_size: long) -> string {
+    path = h2w_path(dir, number)
+    file, err = fs.open(path, "w+")
+    if err != "" { return "cannot create ${path}: ${err}" }
+    defer fs.file_close(file)
+
+    written = zero_long()
+    while written < file_size {
+        payload = sector_payload(written)
+        n, werr = fs.pwrite(file, payload, SECTOR_SIZE, written)
+        if werr != "" { return "write failed at ${written}: ${werr}" }
+        if n != sector_size_long() { return "short write at ${written}" }
+        written = written + sector_size_long()
+    }
+    ferr = fs.fsync(file)
+    if ferr != "" { return ferr }
+    return ""
+}
+
+sector_size_long() -> long {
+    long s = 512
+    return s
+}
+
+validate_sector(payload: string, offset: long) -> int {
+    buf = bytes.new(SECTOR_SIZE)
+    defer bytes.free(buf)
+    if bytes.copy_from_string(buf, 0, payload, SECTOR_SIZE) == 0 {
+        return 0
+    }
+    if bytes.get_le64(buf, 0) != offset {
+        return 0
+    }
+    rnd = offset
+    i = 8
+    while i < SECTOR_SIZE {
+        rnd = next_random_number(rnd)
+        if bytes.get_le64(buf, i) != rnd {
+            return 0
+        }
+        i = i + 8
+    }
+    return 1
+}
+
+read_h2w_file(dir: string, number: long) -> {
+    path = h2w_path(dir, number)
+    file, err = fs.open(path, "r")
+    if err != "" { return zero_long(), zero_long(), "cannot open ${path}: ${err}" }
+    defer fs.file_close(file)
+
+    ok = zero_long()
+    bad = zero_long()
+    offset = zero_long()
+    while true {
+        payload, n, rerr = fs.pread(file, SECTOR_SIZE, offset)
+        if rerr != "" { return ok, bad, "read failed at ${offset}: ${rerr}" }
+        if n == 0 { break }
+        if n != SECTOR_SIZE { return ok, bad + one_long(), "short sector at ${offset}" }
+        if validate_sector(payload, offset) == 1 {
+            ok = ok + one_long()
+        } else {
+            bad = bad + one_long()
+        }
+        offset = offset + sector_size_long()
+    }
+    return ok, bad, ""
+}
+
+is_h2w_name(name: string) -> int {
+    n = string.length(name)
+    if n <= 4 { return 0 }
+    i = 0
+    while i < n - 4 {
+        if is_digit(string.char_at_n(name, n, i)) == 0 { return 0 }
+        i = i + 1
+    }
+    if string.substring_n(name, n, n - 4, n) == ".h2w" { return 1 }
+    return 0
+}
+
+number_from_h2w(name: string) -> long {
+    n = string.length(name)
+    value = zero_long()
+    i = 0
+    while i < n - 4 {
+        value = value * 10 + (string.char_at_n(name, n, i) - 48)
+        i = i + 1
+    }
+    return value
+}
+
+scan_last_h2w(dir: string) -> long {
+    list, err = fs.list_dir(dir)
+    if err != "" { return 0 }
+    defer fs.dir_list_free(list)
+    count = fs.dir_list_count(list)
+    i = 0
+    max = zero_long()
+    while i < count {
+        name = fs.dir_list_get(list, i)
+        if is_h2w_name(name) == 1 {
+            num = number_from_h2w(name)
+            if num > max { max = num }
+        }
+        i = i + 1
+    }
+    return max
+}
