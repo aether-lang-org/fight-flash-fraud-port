@@ -169,9 +169,27 @@ mounted_flash_like(source: string, mountpoint: string) -> int {
     return 0
 }
 
+// /proc files report a stat size of 0, so io.read_file (which sizes its
+// buffer from fseek/ftell) reads nothing. Read to EOF with a pread loop.
+read_proc_file(path: string) -> string {
+    file, err = fs.open(path, "r")
+    if err != "" { return "" }
+    defer fs.file_close(file)
+    acc = ""
+    offset = f3core.zero_long()
+    while true {
+        chunk, n, rerr = fs.pread(file, 65536, offset)
+        if rerr != "" { break }
+        if n == 0 { break }
+        acc = string.concat(acc, chunk)
+        offset = offset + n
+    }
+    return acc
+}
+
 add_mountinfo_paths(paths: ptr) {
-    info, err = io.read_file("/proc/self/mountinfo")
-    if err != "" { return }
+    info = read_proc_file("/proc/self/mountinfo")
+    if info == "" { return }
     lines = string.split(info, "\n")
     defer string.array_free(lines)
 
