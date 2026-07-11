@@ -31,9 +31,9 @@ development with sibling checkouts, run:
 
 That checks for:
 
-- ``~/scm/aether``
-- ``~/scm/aether-ui``
-- ``~/scm/aeocha``
+- ``~/scm/AetherThings/aether``
+- ``~/scm/AetherThings/aether-ui``
+- ``~/scm/AetherThings/aeocha``
 
 Then it builds the app and runs the tests.
 
